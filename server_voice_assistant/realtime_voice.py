@@ -204,7 +204,7 @@ class RealtimeVoiceAssistant:
                 "bot_name": BOT_NAME,
                 "system_role": SYSTEM_ROLE,
                 "speaking_style": SPEAKING_STYLE,
-                "dialog_id": "",
+                "dialog_id": "home-assistant-main",
                 "extra": {
                     "strict_audit": False,
                     "model": MODEL_VERSION,
@@ -347,16 +347,38 @@ class RealtimeVoiceAssistant:
                 self._aplay_proc = None
 
     async def run(self):
-        """主运行循环"""
+        """主运行循环（带自动重连）"""
         print("=" * 50)
-        print("  🏠 家庭语音助手 v2 (端到端实时语音)")
+        print("  🏠 家庭语音助手 v2 (豆包端到端实时语音)")
         print("=" * 50)
         print()
         print(f"  人设: {BOT_NAME}")
         print(f"  方言: 陕西话")
         print(f"  模型: O2.0")
+        print(f"  模式: 永久运行（自动重连）")
         print()
 
+        while True:
+            try:
+                await self._run_session()
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                print(f"  ⚠️  连接异常: {e}")
+
+            if not self.running:
+                break
+
+            # 自动重连
+            print("  🔄 5秒后自动重连...")
+            self.session_id = str(uuid.uuid4())
+            self._aplay_proc = None
+            await asyncio.sleep(5)
+
+        print("\n  👋 再见！")
+
+    async def _run_session(self):
+        """单次会话"""
         headers = {
             "X-Api-App-ID": APP_ID,
             "X-Api-Access-Key": ACCESS_KEY,
@@ -365,66 +387,45 @@ class RealtimeVoiceAssistant:
             "X-Api-Connect-Id": str(uuid.uuid4()),
         }
 
-        try:
-            async with websockets.connect(
-                WS_URL,
-                additional_headers=headers,
-                ping_interval=30,
-                ping_timeout=10,
-            ) as ws:
-                self.ws = ws
-                self.running = True
+        async with websockets.connect(
+            WS_URL,
+            additional_headers=headers,
+            ping_interval=30,
+            ping_timeout=10,
+        ) as ws:
+            self.ws = ws
+            self.running = True
 
-                # 1. StartConnection
-                await ws.send(build_client_event(1))
-                resp = await ws.recv()
-                parsed = parse_server_frame(resp)
-                if parsed and parsed["event_id"] == 50:
-                    print("  ✅ WebSocket 连接成功")
-                else:
-                    print("  ❌ 连接失败")
-                    return
+            # 1. StartConnection
+            await ws.send(build_client_event(1))
+            resp = await ws.recv()
+            parsed = parse_server_frame(resp)
+            if not parsed or parsed["event_id"] != 50:
+                print("  ❌ 连接失败")
+                return
+            print("  ✅ WebSocket 连接成功")
 
-                # 2. StartSession
-                session_payload = self.get_session_payload()
-                frame = build_client_event(100, self.session_id, session_payload)
-                await ws.send(frame)
-                print("  ⏳ 等待会话启动...")
+            # 2. StartSession
+            session_payload = self.get_session_payload()
+            frame = build_client_event(100, self.session_id, session_payload)
+            await ws.send(frame)
 
-                # Wait for SessionStarted
-                resp = await asyncio.wait_for(ws.recv(), timeout=10)
-                parsed = parse_server_frame(resp)
-                if parsed and parsed["event_id"] == 150:
-                    print("  ✅ 会话已启动")
-                else:
-                    print(f"  ❌ 会话启动失败: {parsed}")
-                    return
+            # Wait for SessionStarted
+            resp = await asyncio.wait_for(ws.recv(), timeout=10)
+            parsed = parse_server_frame(resp)
+            if not parsed or parsed["event_id"] != 150:
+                print(f"  ❌ 会话启动失败")
+                return
+            print("  ✅ 会话已启动")
+            print()
+            print("  🎧 就绪！直接说话即可，无需唤醒词。")
+            print()
 
-                print()
-                print("  🎧 就绪！直接说话即可，无需唤醒词。")
-                print("  按 Ctrl+C 退出")
-                print()
-
-                # 3. 并发：发送音频 + 接收事件
-                await asyncio.gather(
-                    self.send_audio(),
-                    self.receive_events(),
-                )
-
-        except KeyboardInterrupt:
-            pass
-        except Exception as e:
-            print(f"  ❌ 错误: {e}")
-        finally:
-            self.running = False
-            # 发送 FinishSession + FinishConnection
-            if self.ws:
-                try:
-                    await self.ws.send(build_client_event(102, self.session_id))
-                    await self.ws.send(build_client_event(2))
-                except:
-                    pass
-            print("\n  👋 再见！")
+            # 3. 并发：发送音频 + 接收事件
+            await asyncio.gather(
+                self.send_audio(),
+                self.receive_events(),
+            )
 
 
 async def main():
@@ -437,3 +438,6 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n  👋 再见！")
+    except Exception as e:
+        print(f"  Fatal: {e}")
+        sys.exit(1)
