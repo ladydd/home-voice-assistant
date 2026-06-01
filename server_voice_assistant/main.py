@@ -404,9 +404,67 @@ def text_to_speech_piper(text, output_path):
     )
 
 
+def text_to_speech_volcengine(text, output_path):
+    """火山引擎 TTS (Vivi 2.0 陕西话)"""
+    import uuid
+    import base64
+
+    volcengine_cfg = config.get("tts", {}).get("volcengine", {})
+    api_key = volcengine_cfg.get("api_key", "")
+    resource_id = volcengine_cfg.get("resource_id", "seed-tts-2.0")
+    speaker = volcengine_cfg.get("speaker", "zh_female_vv_uranus_bigtts")
+    dialect = volcengine_cfg.get("dialect", "")
+    sample_rate = volcengine_cfg.get("sample_rate", 24000)
+
+    url = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Api-Key": api_key,
+        "X-Api-Resource-Id": resource_id,
+        "X-Api-Request-Id": str(uuid.uuid4()),
+    }
+
+    additions = {}
+    if dialect:
+        additions["explicit_dialect"] = dialect
+
+    payload = {
+        "user": {"uid": "voice-assistant"},
+        "req_params": {
+            "text": text,
+            "speaker": speaker,
+            "audio_params": {
+                "format": "mp3",
+                "sample_rate": sample_rate,
+            },
+            "additions": json.dumps(additions) if additions else "",
+        },
+    }
+
+    resp = requests.post(url, json=payload, headers=headers, stream=True, timeout=30)
+    if resp.status_code != 200:
+        raise Exception(f"Volcengine TTS failed: {resp.status_code} {resp.text[:200]}")
+
+    audio_data = b""
+    for line in resp.iter_lines():
+        if line:
+            try:
+                obj = json.loads(line)
+                if obj.get("data"):
+                    audio_data += base64.b64decode(obj["data"])
+            except:
+                pass
+
+    if not audio_data:
+        raise Exception("Volcengine TTS: no audio data received")
+
+    with open(output_path, "wb") as f:
+        f.write(audio_data)
+
+
 def text_to_speech(text):
     """文字转语音，返回 WAV 文件路径"""
-    # 如果文本太长，截断（edge-tts 对超长文本可能失败）
+    # 如果文本太长，截断（防止 TTS 失败）
     if len(text) > 200:
         text = text[:200] + "...就说到这里。"
 
@@ -416,7 +474,17 @@ def text_to_speech(text):
     tmp_wav.close()
 
     try:
-        if TTS_PROVIDER == "edge":
+        if TTS_PROVIDER == "volcengine":
+            text_to_speech_volcengine(text, tmp_mp3.name)
+            # 转换为 WAV
+            subprocess.run(
+                ["ffmpeg", "-i", tmp_mp3.name, "-f", "wav", "-acodec", "pcm_s16le",
+                 "-ar", "44100", tmp_wav.name, "-y"],
+                capture_output=True,
+            )
+            os.unlink(tmp_mp3.name)
+            return tmp_wav.name
+        elif TTS_PROVIDER == "edge":
             asyncio.run(text_to_speech_edge(text, tmp_mp3.name))
             # 转换为 WAV
             subprocess.run(
