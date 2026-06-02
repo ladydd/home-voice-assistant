@@ -213,32 +213,57 @@ class RealtimeVoiceAssistant:
             },
         }
 
+    def find_mic_device(self):
+        """动态查找无线麦克风设备"""
+        try:
+            devices = sd.query_devices()
+            for i, d in enumerate(devices):
+                if d["max_input_channels"] > 0:
+                    name = d["name"].lower()
+                    if "wireless" in name or "microphone" in name:
+                        return i
+        except:
+            pass
+        return None
+
     async def send_audio(self):
-        """从麦克风读取音频并发送到服务端"""
+        """从麦克风读取音频并发送到服务端（带设备重连）"""
         print("  🎤 麦克风已开启，开始推送音频...")
 
-        with sd.InputStream(
-            samplerate=MIC_RECORD_RATE,
-            channels=MIC_CHANNELS,
-            dtype="int16",
-            device=MIC_DEVICE,
-            blocksize=CHUNK_SAMPLES,
-        ) as stream:
-            while self.running:
-                try:
-                    chunk, _ = stream.read(CHUNK_SAMPLES)
-                    if chunk.ndim > 1:
-                        chunk = chunk[:, 0]
-                    # 降采样 48kHz -> 16kHz
-                    chunk_16k = chunk[::DOWNSAMPLE_RATIO]
-                    audio_bytes = chunk_16k.tobytes()
-                    frame = build_audio_frame(audio_bytes, self.session_id)
-                    await self.ws.send(frame)
-                    await asyncio.sleep(CHUNK_DURATION_MS / 1000.0)
-                except Exception as e:
-                    if self.running:
-                        print(f"  ⚠️  音频发送错误: {e}")
-                    break
+        while self.running:
+            device = self.find_mic_device()
+            if device is None:
+                print("  ⚠️  麦克风未找到，等待重连...")
+                await asyncio.sleep(3)
+                continue
+
+            try:
+                with sd.InputStream(
+                    samplerate=MIC_RECORD_RATE,
+                    channels=MIC_CHANNELS,
+                    dtype="int16",
+                    device=device,
+                    blocksize=CHUNK_SAMPLES,
+                ) as stream:
+                    while self.running:
+                        chunk, _ = stream.read(CHUNK_SAMPLES)
+                        if chunk.ndim > 1:
+                            chunk = chunk[:, 0]
+                        # 降采样 48kHz -> 16kHz
+                        chunk_16k = chunk[::DOWNSAMPLE_RATIO]
+                        audio_bytes = chunk_16k.tobytes()
+                        frame = build_audio_frame(audio_bytes, self.session_id)
+                        await self.ws.send(frame)
+                        await asyncio.sleep(CHUNK_DURATION_MS / 1000.0)
+            except Exception as e:
+                if self.running:
+                    err_str = str(e)
+                    if "connection" in err_str.lower() or "1000" in err_str or "1011" in err_str:
+                        # WebSocket 断了，跳出让外层重连
+                        print(f"  ⚠️  连接断开: {e}")
+                        return
+                    print(f"  ⚠️  麦克风错误: {e}，3秒后重试...")
+                    await asyncio.sleep(3)
 
     async def receive_events(self):
         """接收服务端事件"""

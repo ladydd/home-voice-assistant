@@ -5,7 +5,8 @@ After=network.target sound.target
 [Service]
 Type=simple
 User=ladydd
-Group=audio
+Group=ladydd
+SupplementaryGroups=audio
 WorkingDirectory=/home/ladydd/voice-doubao
 ExecStart=/home/ladydd/.hermes/hermes-agent/venv/bin/python /home/ladydd/voice-doubao/main.py
 Restart=always
