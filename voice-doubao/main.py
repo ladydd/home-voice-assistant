@@ -9,6 +9,7 @@ WebSocket 全双工实时对话，支持陕西话方言。
 
 import asyncio
 import json
+import os
 import struct
 import sys
 import threading
@@ -22,8 +23,9 @@ import websockets
 # ─── 配置 ────────────────────────────────────────────────────
 
 # 鉴权
-APP_ID = "your-app-id"
-ACCESS_KEY = "your-access-key"
+# 鉴权（从环境变量读取，或直接填入）
+APP_ID = os.environ.get("VOLC_APP_ID", "your-app-id")
+ACCESS_KEY = os.environ.get("VOLC_ACCESS_KEY", "your-access-key")
 RESOURCE_ID = "volc.speech.dialog"
 APP_KEY = "PlgvMymc7f3tQnJ6"
 

@@ -1,50 +1,48 @@
 # 语音助手配置
 
-# Hermes API
+# LLM API（OpenAI 兼容接口，可接 Hermes Agent / DeepSeek / Ollama 等）
 hermes:
   url: "http://localhost:8642/v1/chat/completions"
-  api_key: "hermes-ladydd-2026"
+  api_key: "your-api-key"
   model: "deepseek-v4-pro"
   system_prompt: "你是一个家庭语音助手，回答简洁明了，用口语化的中文，控制在两三句话以内，不要列举太多内容。"
 
 # 音频录制
 audio:
-  device_index: 6  # Wireless microphone: USB Audio (hw:1,0)
+  device_index: null  # null=自动查找 USB 麦克风，或指定设备编号
   sample_rate: 16000
   channels: 1
 
 # STT (语音转文字)
 stt:
-  provider: "volcengine"  # volcengine (在线，准) 或 whisper (本地，免费)
+  provider: "whisper"  # whisper (本地免费) 或 volcengine (在线，准)
+  whisper:
+    model: "small"  # tiny/base/small/medium（越大越准但越慢）
   volcengine:
-    api_key: "f103d3e6-118c-41ab-b2f5-99d7320d625e"
+    api_key: "your-volcengine-api-key"
     resource_id: "volc.seedasr.auc"
 
 # VAD (语音活动检测)
 vad:
-  # 音量阈值，超过这个值认为有人说话（根据环境调整）
-  energy_threshold: 300
-  # 静音多少秒后认为说完了
-  silence_duration: 3.0
-  # 最短录音时长（防止误触发）
+  energy_threshold: 300    # 音量阈值（根据环境调整）
+  silence_duration: 3.0    # 静音多少秒后认为说完了
   min_recording_duration: 0.5
-  # 最长录音时长（防止一直录）
   max_recording_duration: 30.0
 
 # TTS (文字转语音)
 tts:
-  provider: "volcengine"  # volcengine (火山引擎) 或 edge (微软) 或 piper (本地)
-  volcengine:
-    api_key: "f103d3e6-118c-41ab-b2f5-99d7320d625e"
-    resource_id: "seed-tts-2.0"
-    speaker: "zh_female_vv_uranus_bigtts"  # Vivi 2.0
-    dialect: "shaanxi"  # 陕西话 (也可选 dongbei/sichuan)
-    sample_rate: 24000
+  provider: "edge"  # edge (微软免费) 或 volcengine (火山引擎) 或 piper (本地)
   edge:
     voice: "zh-CN-XiaoxiaoNeural"  # 女声
-    # 其他选择: zh-CN-YunxiNeural (男声), zh-CN-YunjianNeural (沉稳男声)
+    # 可选: zh-CN-YunxiNeural(男声), zh-CN-shaanxi-XiaoniNeural(陕西话)
+  volcengine:
+    api_key: "your-volcengine-api-key"
+    resource_id: "seed-tts-2.0"
+    speaker: "zh_female_vv_uranus_bigtts"
+    dialect: "shaanxi"  # shaanxi/dongbei/sichuan
+    sample_rate: 24000
   piper:
-    model: "/home/ladydd/.hermes/piper-voices/zh_CN-huayan-medium.onnx"
+    model: "/path/to/zh_CN-huayan-medium.onnx"
 
 # 音频播放
 playback:
@@ -53,5 +51,5 @@ playback:
 # 唤醒词
 wakeword:
   enabled: true
-  model: "alexa_v0.1"  # 唤醒词: "Alexa"
-  threshold: 0.5  # 检测阈值 (0~1, 越高越不容易误触发，但也越难触发)
+  model: "alexa_v0.1"  # alexa/hey_jarvis/hey_mycroft
+  threshold: 0.5
