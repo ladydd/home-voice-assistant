@@ -9,7 +9,6 @@ WebSocket 全双工实时对话，支持陕西话方言。
 
 import asyncio
 import json
-import os
 import struct
 import sys
 import threading
@@ -23,9 +22,8 @@ import websockets
 # ─── 配置 ────────────────────────────────────────────────────
 
 # 鉴权
-# 鉴权（从环境变量读取，或直接填入）
-APP_ID = os.environ.get("VOLC_APP_ID", "your-app-id")
-ACCESS_KEY = os.environ.get("VOLC_ACCESS_KEY", "your-access-key")
+APP_ID = "your-app-id"
+ACCESS_KEY = "your-access-key"
 RESOURCE_ID = "volc.speech.dialog"
 APP_KEY = "PlgvMymc7f3tQnJ6"
 
@@ -348,15 +346,26 @@ class RealtimeVoiceAssistant:
             stdin=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
+        self._aplay_start_time = time.time()
 
     def play_audio_chunk(self, audio_bytes):
-        """直接写入 aplay 进程，出错自动重建"""
+        """直接写入 aplay 进程，出错或超时自动重建"""
         with self.play_lock:
+            # 检查 aplay 是否需要重建（死了或运行超过 60 秒没 flush 就强制重建）
+            need_restart = False
             if self._aplay_proc is None or self._aplay_proc.poll() is not None:
+                need_restart = True
+            elif hasattr(self, '_aplay_start_time') and time.time() - self._aplay_start_time > 120:
+                # aplay 运行超过 2 分钟，主动重建防止假死
+                need_restart = True
+
+            if need_restart:
                 self._start_aplay()
+
             try:
                 self._aplay_proc.stdin.write(audio_bytes)
                 self._aplay_proc.stdin.flush()
+                self._aplay_start_time = time.time()  # 成功写入，刷新时间
             except Exception as e:
                 # aplay 挂了，重建并重试一次
                 try:
