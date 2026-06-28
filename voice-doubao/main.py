@@ -331,23 +331,41 @@ class RealtimeVoiceAssistant:
                 if self.running:
                     print(f"  ⚠️  接收错误: {e}")
 
+    def _start_aplay(self):
+        """启动一个新的 aplay 进程"""
+        import subprocess
+        try:
+            if self._aplay_proc and self._aplay_proc.poll() is None:
+                try:
+                    self._aplay_proc.kill()
+                    self._aplay_proc.wait(timeout=2)
+                except:
+                    pass
+        except:
+            pass
+        self._aplay_proc = subprocess.Popen(
+            ["aplay", "-D", "plughw:0,0", "-f", "S16_LE", "-r", str(PLAY_SAMPLE_RATE), "-c", "1", "-t", "raw"],
+            stdin=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+
     def play_audio_chunk(self, audio_bytes):
-        """直接写入 aplay 进程"""
+        """直接写入 aplay 进程，出错自动重建"""
         with self.play_lock:
             if self._aplay_proc is None or self._aplay_proc.poll() is not None:
-                # 启动一个持续的 aplay 进程
-                import subprocess
-                self._aplay_proc = subprocess.Popen(
-                    ["aplay", "-D", "plughw:0,0", "-f", "S16_LE", "-r", str(PLAY_SAMPLE_RATE), "-c", "1", "-t", "raw"],
-                    stdin=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                )
+                self._start_aplay()
             try:
                 self._aplay_proc.stdin.write(audio_bytes)
                 self._aplay_proc.stdin.flush()
             except Exception as e:
-                print(f"  ⚠️  播放错误: {e}")
-                self._aplay_proc = None
+                # aplay 挂了，重建并重试一次
+                try:
+                    self._start_aplay()
+                    self._aplay_proc.stdin.write(audio_bytes)
+                    self._aplay_proc.stdin.flush()
+                except Exception as e2:
+                    print(f"  ⚠️  播放错误: {e2}")
+                    self._aplay_proc = None
 
     def _play_buffer(self):
         pass
